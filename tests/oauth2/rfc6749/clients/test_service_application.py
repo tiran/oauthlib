@@ -4,7 +4,7 @@ from __future__ import absolute_import, unicode_literals
 import os
 from time import time
 
-import jwt
+import jwcrypto
 from mock import patch
 
 from oauthlib.common import Request

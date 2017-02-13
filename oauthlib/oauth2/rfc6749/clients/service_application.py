@@ -10,7 +10,7 @@ from __future__ import absolute_import, unicode_literals
 
 import time
 
-from oauthlib.common import to_unicode
+from oauthlib.common import generate_jwt_assertion
 
 from .base import Client
 from ..parameters import prepare_token_request
@@ -139,8 +139,6 @@ class ServiceApplicationClient(Client):
 
         .. _`Section 3.2.1`: http://tools.ietf.org/html/rfc6749#section-3.2.1
         """
-        import jwt
-
         key = private_key or self.private_key
         if not key:
             raise ValueError('An encryption key must be supplied to make JWT'
@@ -166,8 +164,7 @@ class ServiceApplicationClient(Client):
 
         claim.update(extra_claims or {})
 
-        assertion = jwt.encode(claim, key, 'RS256')
-        assertion = to_unicode(assertion)
+        assertion = generate_jwt_assertion(key, claim)
 
         return prepare_token_request(self.grant_type,
                                      body=body,

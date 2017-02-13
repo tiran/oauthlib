@@ -8,6 +8,7 @@ to all implementations of OAuth.
 """
 from __future__ import absolute_import, unicode_literals
 
+import calendar
 import collections
 import datetime
 import logging
@@ -28,6 +29,25 @@ try:
     import urlparse
 except ImportError:
     import urllib.parse as urlparse
+
+
+try:
+    from jwcrypto.jwk import JWK
+    from jwcrypto.jwt import JWT
+    from jwcrypto.common import json_decode
+
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, load_pem_public_key
+    )
+    from cryptography.hazmat.primitives.asymmetric.rsa import (
+        RSAPrivateKey, RSAPublicKey
+    )
+except ImportError:
+    HAS_JWCRYPTO = False
+else:
+    HAS_JWCRYPTO = True
+
 
 UNICODE_ASCII_CHARACTER_SET = ('abcdefghijklmnopqrstuvwxyz'
                                'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -229,28 +249,52 @@ def generate_token(length=30, chars=UNICODE_ASCII_CHARACTER_SET):
     return ''.join(rand.choice(chars) for x in range(length))
 
 
+def generate_jwt_assertion(private_pem, claims):
+    if not HAS_JWCRYPTO:
+        raise ImportError('jwcrypto missing')
+
+    if isinstance(private_pem, RSAPrivateKey):
+        pkey = private_pem
+    else:
+        if not isinstance(private_pem, bytes):
+            private_pem = private_pem.encode('utf-8')
+        pkey = load_pem_private_key(private_pem, None, default_backend())
+        if not isinstance(pkey, RSAPrivateKey):
+            raise TypeError(pkey)
+    jwkey = JWK.from_pyca(pkey)
+
+    token = JWT(header={'alg': 'RS256'}, claims=claims)
+    token.make_signed_token(jwkey)
+    return to_unicode(token.serialize(), "UTF-8")
+
+
 def generate_signed_token(private_pem, request):
-    import jwt
-
     now = datetime.datetime.utcnow()
-
+    exp = now + datetime.timedelta(seconds=request.expires_in)
     claims = {
         'scope': request.scope,
-        'exp': now + datetime.timedelta(seconds=request.expires_in)
+        'exp': calendar.timegm(exp.timetuple())
     }
-
     claims.update(request.claims)
-
-    token = jwt.encode(claims, private_pem, 'RS256')
-    token = to_unicode(token, "UTF-8")
-
-    return token
+    return generate_jwt_assertion(private_pem, claims)
 
 
 def verify_signed_token(public_pem, token):
-    import jwt
+    if not HAS_JWCRYPTO:
+        raise ImportError('jwcrypto missing')
 
-    return jwt.decode(token, public_pem, algorithms=['RS256'])
+    if isinstance(public_pem, RSAPublicKey):
+        pubkey = public_pem
+    else:
+        if not isinstance(public_pem, bytes):
+            public_pem = public_pem.encode('utf-8')
+        pubkey = load_pem_public_key(public_pem, default_backend())
+        if not isinstance(pubkey, RSAPublicKey):
+            raise TypeError(pubkey)
+    jwkey = JWK.from_pyca(pubkey)
+
+    et = JWT(key=jwkey, jwt=token)
+    return json_decode(et.claims)
 
 
 def generate_client_id(length=30, chars=CLIENT_ID_CHARACTER_SET):

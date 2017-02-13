@@ -2,7 +2,6 @@
 from __future__ import absolute_import, unicode_literals
 from ...unittest import TestCase
 import json
-import jwt
 import mock
 
 from oauthlib import common
